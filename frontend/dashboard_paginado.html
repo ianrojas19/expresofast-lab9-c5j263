@@ -29,11 +29,11 @@
                     <input type="text" id="input-busqueda" placeholder="Código, destino..." aria-label="Buscar envíos">
                 </div>
 
-                <!-- Selector SP -->
+                <!-- Selector Estado -->
                 <div class="filtro-group">
-                    <label for="select-estado-sp">Stored Procedure (Estado):</label>
-                    <select id="select-estado-sp" aria-label="Filtrar por estado via Stored Procedure">
-                        <option value="">-- Paginación Normal --</option>
+                    <label for="select-estado-sp">Estado (Paginado):</label>
+                    <select id="select-estado-sp" aria-label="Filtrar por estado">
+                        <option value="">-- Todos --</option>
                         <option value="PENDIENTE">PENDIENTE</option>
                         <option value="EN_TRANSITO">EN_TRANSITO</option>
                         <option value="ENTREGADO">ENTREGADO</option>
@@ -217,28 +217,22 @@
 
 
     async function cargarDatos() {
-        const estadoSP = document.getElementById('select-estado-sp').value;
-
-        if (estadoSP) {
-            // Usar Stored Procedure
-            usingSP = true;
-            await cargarViaStoredProcedure(estadoSP);
-        } else {
-            // Usar paginación normal
-            usingSP = false;
-            await cargarPaginado();
-        }
+        await cargarPaginado();
     }
 
     // Paginación relacional normal
     async function cargarPaginado() {
         const size = document.getElementById('select-page-size').value;
         const busqueda = document.getElementById('input-busqueda').value.trim();
+        const estado = document.getElementById('select-estado-sp').value;
 
         let url = `${API_URL}/v1/envios?page=${currentPage}&size=${size}&sortBy=fechaCreacion&direction=desc`;
 
         if (busqueda) {
             url += `&busqueda=${encodeURIComponent(busqueda)}`;
+        }
+        if (estado) {
+            url += `&estado=${encodeURIComponent(estado)}`;
         }
 
         try {
@@ -261,26 +255,7 @@
         }
     }
 
-    // Carga via Stored Procedure
-    async function cargarViaStoredProcedure(estado) {
-        try {
-            const res = await fetchWithAuth(`${API_URL}/v1/envios/procedimiento/${encodeURIComponent(estado)}`);
-            if (res.ok) {
-                const data = await res.json();
 
-                totalPages = 1;
-                totalElements = data.length;
-                isFirstPage = true;
-                isLastPage = true;
-                currentPage = 0;
-
-                renderTabla(data);
-                actualizarPaginador();
-            }
-        } catch (error) {
-            console.error('Error cargando datos via SP:', error);
-        }
-    }
 
 
     function renderTabla(envios) {
