@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - ExpresoFast</title>
+    <meta name="description" content="Portal de inicio de sesión para operadores, administradores y conductores de ExpresoFast.">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="login-wrapper">
+        <div class="login-box">
+            <h2>ExpresoFast</h2>
+            <div id="login-error" class="error-msg" aria-live="polite"></div>
+            <form id="loginForm">
+                <label for="username">Usuario:</label>
+                <input type="text" id="username" name="username" required aria-required="true">
+                
+                <label for="password">Contraseña:</label>
+                <input type="password" id="password" name="password" required aria-required="true">
+                
+                <button type="submit" class="btn-primary">Iniciar Sesión</button>
+            </form>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
