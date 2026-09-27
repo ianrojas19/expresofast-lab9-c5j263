@@ -11,17 +11,30 @@ import cr.ac.ucr.paraiso.ie.c5j263.expresofast.domain.Usuario;
 import cr.ac.ucr.paraiso.ie.c5j263.expresofast.domain.Vehiculo;
 import cr.ac.ucr.paraiso.ie.c5j263.expresofast.domain.Conductor;
 import cr.ac.ucr.paraiso.ie.c5j263.expresofast.domain.dto.CambioEstadoDTO;
+import cr.ac.ucr.paraiso.ie.c5j263.expresofast.domain.dto.EnvioDTO;
 import cr.ac.ucr.paraiso.ie.c5j263.expresofast.domain.dto.EnvioRequestDTO;
 import cr.ac.ucr.paraiso.ie.c5j263.expresofast.domain.dto.EnvioResponseDTO;
 import cr.ac.ucr.paraiso.ie.c5j263.expresofast.domain.dto.BitacoraResponseDTO;
+import cr.ac.ucr.paraiso.ie.c5j263.expresofast.domain.dto.ResumenMetricasDTO;
 import cr.ac.ucr.paraiso.ie.c5j263.expresofast.exception.InvalidStateTransitionException;
 import cr.ac.ucr.paraiso.ie.c5j263.expresofast.exception.ResourceNotFoundException;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import javax.sql.DataSource;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -34,21 +47,106 @@ public class EnvioService {
     private final ConductorRepository conductorRepository;
     private final BitacoraEnvioRepository bitacoraEnvioRepository;
     private final UsuarioRepository usuarioRepository;
+    private final DataSource dataSource;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public EnvioService(EnvioRepository envioRepository, VehiculoRepository vehiculoRepository, 
                         ConductorRepository conductorRepository, BitacoraEnvioRepository bitacoraEnvioRepository,
-                        UsuarioRepository usuarioRepository) {
+                        UsuarioRepository usuarioRepository, DataSource dataSource) {
         this.envioRepository = envioRepository;
         this.vehiculoRepository = vehiculoRepository;
         this.conductorRepository = conductorRepository;
         this.bitacoraEnvioRepository = bitacoraEnvioRepository;
         this.usuarioRepository = usuarioRepository;
+        this.dataSource = dataSource;
     }
 
     @Transactional(readOnly = true)
     public List<EnvioResponseDTO> obtenerEnviosOptimizados() {
         return envioRepository.findAllWithDetails().stream().map(this::mapToResponseDTO).collect(Collectors.toList());
     }
+
+
+
+
+    @Transactional(readOnly = true)
+    public Page<EnvioDTO> listarPaginado(int page, int size, String sortBy, String dir,
+                                          String busqueda, String estado) {
+        Sort sort = dir.equalsIgnoreCase("desc")
+                ? Sort.by(sortBy).descending()
+                : Sort.by(sortBy).ascending();
+
+        PageRequest pageRequest = PageRequest.of(page, size, sort);
+
+        Page<Envio> enviosPage;
+
+        boolean tieneBusqueda = busqueda != null && !busqueda.trim().isEmpty();
+        boolean tieneEstado = estado != null && !estado.trim().isEmpty();
+
+        if (tieneBusqueda && tieneEstado) {
+            enviosPage = envioRepository.buscarPorTerminoYEstado(busqueda.trim(), estado.trim(), pageRequest);
+        } else if (tieneBusqueda) {
+            enviosPage = envioRepository.buscarPorTermino(busqueda.trim(), pageRequest);
+        } else if (tieneEstado) {
+            enviosPage = envioRepository.findByEstadoEnvio(estado.trim(), pageRequest);
+        } else {
+            enviosPage = envioRepository.findAll(pageRequest);
+        }
+
+        return enviosPage.map(this::mapToEnvioDTO);
+    }
+
+
+    @Transactional(readOnly = true)
+    public List<EnvioDTO> listarViaStoredProcedure(String estado) {
+        List<EnvioDTO> dtos = new ArrayList<>();
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement("SELECT * FROM SP_OBTENER_ENVIOS_POR_ESTADO(?)")) {
+            ps.setString(1, estado);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    dtos.add(new EnvioDTO(
+                        rs.getInt("ENVIO_ID"),
+                        rs.getString("CODIGO_RASTREO"),
+                        null,
+                        rs.getString("DIRECCION_DESTINO"),
+                        rs.getBigDecimal("COSTO"),
+                        rs.getString("ESTADO_ENVIO"),
+                        rs.getTimestamp("FECHA_CREACION") != null
+                            ? rs.getTimestamp("FECHA_CREACION").toLocalDateTime() : null
+                    ));
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Error ejecutando SP_OBTENER_ENVIOS_POR_ESTADO: " + e.getMessage(), e);
+        }
+        return dtos;
+    }
+
+
+    @Transactional(readOnly = true)
+    public List<ResumenMetricasDTO> obtenerResumenMetricas() {
+        List<ResumenMetricasDTO> metricas = new ArrayList<>();
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement("SELECT * FROM SP_RESUMEN_METRICAS_ENVIOS()")) {
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    metricas.add(new ResumenMetricasDTO(
+                        rs.getString("ESTADO_ENVIO"),
+                        rs.getLong("TOTAL_ENVIOS"),
+                        rs.getBigDecimal("SUMA_FLETE")
+                    ));
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Error ejecutando SP_RESUMEN_METRICAS_ENVIOS: " + e.getMessage(), e);
+        }
+        return metricas;
+    }
+
+
 
     public EnvioResponseDTO registrarEnvio(EnvioRequestDTO dto) {
         Envio envio = new Envio();
@@ -159,6 +257,8 @@ public class EnvioService {
         }
     }
 
+
+
     private EnvioResponseDTO mapToResponseDTO(Envio envio) {
         EnvioResponseDTO dto = new EnvioResponseDTO();
         dto.setId(envio.getId());
@@ -170,5 +270,20 @@ public class EnvioService {
         if (envio.getVehiculo() != null) dto.setPlacaVehiculo(envio.getVehiculo().getPlaca());
         if (envio.getConductor() != null) dto.setNombreConductor(envio.getConductor().getNombre() + " " + envio.getConductor().getApellidos());
         return dto;
+    }
+
+    private EnvioDTO mapToEnvioDTO(Envio envio) {
+        String destinatario = envio.getConductor() != null
+                ? envio.getConductor().getNombre() + " " + envio.getConductor().getApellidos()
+                : null;
+        return new EnvioDTO(
+                envio.getId(),
+                envio.getCodigoRastreo(),
+                destinatario,
+                envio.getDireccionDestino(),
+                envio.getCosto(),
+                envio.getEstadoEnvio(),
+                envio.getFechaCreacion()
+        );
     }
 }

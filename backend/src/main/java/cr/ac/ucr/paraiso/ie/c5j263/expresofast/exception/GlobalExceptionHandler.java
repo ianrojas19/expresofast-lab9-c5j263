@@ -33,7 +33,8 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(InvalidStateTransitionException.class)
-    public ResponseEntity<Map<String, String>> handleInvalidStateTransitionException(InvalidStateTransitionException ex) {
+    public ResponseEntity<Map<String, String>> handleInvalidStateTransitionException(
+            InvalidStateTransitionException ex) {
         Map<String, String> error = new HashMap<>();
         error.put("error", ex.getMessage());
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
@@ -46,14 +47,14 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(error, HttpStatus.CONFLICT);
     }
 
-    @ExceptionHandler({BadCredentialsException.class})
+    @ExceptionHandler({ BadCredentialsException.class })
     public ResponseEntity<Map<String, String>> handleBadCredentialsException(Exception ex) {
         Map<String, String> error = new HashMap<>();
         error.put("error", "Credenciales inválidas");
         return new ResponseEntity<>(error, HttpStatus.UNAUTHORIZED);
     }
 
-    @ExceptionHandler({AccessDeniedException.class})
+    @ExceptionHandler({ AccessDeniedException.class })
     public ResponseEntity<Map<String, String>> handleAccessDeniedException(Exception ex) {
         Map<String, String> error = new HashMap<>();
         error.put("error", "Acceso denegado");
@@ -62,6 +63,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleGenericException(Exception ex) {
+        ex.printStackTrace();
         Map<String, String> error = new HashMap<>();
         error.put("error", "Ocurrió un error inesperado en el servidor");
         return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);
