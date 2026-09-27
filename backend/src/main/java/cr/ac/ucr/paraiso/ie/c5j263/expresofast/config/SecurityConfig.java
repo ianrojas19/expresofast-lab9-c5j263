@@ -36,7 +36,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration) throws Exception {
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration authenticationConfiguration)
+            throws Exception {
         return authenticationConfiguration.getAuthenticationManager();
     }
 
@@ -55,21 +56,29 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            .cors(Customizer.withDefaults())
-            .csrf(csrf -> csrf.disable())
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/envios/optimizados").hasAnyAuthority("ROLE_ADMIN", "ROLE_OPERADOR", "ROLE_CONDUCTOR")
-                .requestMatchers(HttpMethod.POST, "/api/envios").hasAnyAuthority("ROLE_ADMIN", "ROLE_OPERADOR")
-                .requestMatchers(HttpMethod.PATCH, "/api/envios/{id}/estado").hasAnyAuthority("ROLE_ADMIN", "ROLE_CONDUCTOR")
-                .requestMatchers(HttpMethod.GET, "/api/envios/{id}/bitacora").hasAnyAuthority("ROLE_ADMIN", "ROLE_OPERADOR")
-                .requestMatchers("/api/vehiculos/**").hasAuthority("ROLE_ADMIN")
-                .anyRequest().authenticated()
-            )
-            .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
-        
+                .cors(Customizer.withDefaults())
+                .csrf(csrf -> csrf.disable())
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/v1/envios")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_OPERADOR", "ROLE_CONDUCTOR")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/envios/procedimiento/**")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_OPERADOR", "ROLE_CONDUCTOR")
+                        .requestMatchers(HttpMethod.GET, "/api/v1/envios/metricas")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_OPERADOR")
+                        .requestMatchers(HttpMethod.GET, "/api/envios/optimizados")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_OPERADOR", "ROLE_CONDUCTOR")
+                        .requestMatchers(HttpMethod.POST, "/api/envios").hasAnyAuthority("ROLE_ADMIN", "ROLE_OPERADOR")
+                        .requestMatchers(HttpMethod.PATCH, "/api/envios/{id}/estado")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_CONDUCTOR")
+                        .requestMatchers(HttpMethod.GET, "/api/envios/{id}/bitacora")
+                        .hasAnyAuthority("ROLE_ADMIN", "ROLE_OPERADOR")
+                        .requestMatchers("/api/vehiculos/**").hasAuthority("ROLE_ADMIN")
+                        .anyRequest().authenticated())
+                .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+
         return http.build();
     }
 }
