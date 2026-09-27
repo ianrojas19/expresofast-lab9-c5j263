@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consola Paginada - ExpresoFast</title>
+    <meta name="description" content="Consola logística paginada de ExpresoFast con filtros, stored procedures y navegación interactiva.">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <div class="logo">ExpresoFast</div>
+        <div class="header-actions">
+            <span id="user-info"></span>
+            <a href="dashboard.html" class="btn-secondary" style="text-decoration:none; display:inline-flex; align-items:center; padding:0.5rem 1rem;">Dashboard</a>
+            <button id="btn-logout" class="btn-secondary">Logout</button>
+        </div>
+    </header>
+
+    <main class="paginado-main">
+        <!-- Filtros y Controles -->
+        <section class="filtros-section" id="filtros-section">
+            <h2>Consola Logística Paginada</h2>
+
+            <div class="filtros-grid">
+                <!-- Barra de búsqueda -->
+                <div class="filtro-group">
+                    <label for="input-busqueda">Búsqueda:</label>
+                    <input type="text" id="input-busqueda" placeholder="Código, destino..." aria-label="Buscar envíos">
+                </div>
+
+                <!-- Selector SP -->
+                <div class="filtro-group">
+                    <label for="select-estado-sp">Stored Procedure (Estado):</label>
+                    <select id="select-estado-sp" aria-label="Filtrar por estado via Stored Procedure">
+                        <option value="">-- Paginación Normal --</option>
+                        <option value="PENDIENTE">PENDIENTE</option>
+                        <option value="EN_TRANSITO">EN_TRANSITO</option>
+                        <option value="ENTREGADO">ENTREGADO</option>
+                        <option value="CANCELADO">CANCELADO</option>
+                    </select>
+                </div>
+
+                <!-- Tamaño de página -->
+                <div class="filtro-group">
+                    <label for="select-page-size">Ítems por página:</label>
+                    <select id="select-page-size" aria-label="Seleccionar tamaño de página">
+                        <option value="5" selected>5</option>
+                        <option value="10">10</option>
+                        <option value="20">20</option>
+                    </select>
+                </div>
+
+                <!-- Botón buscar -->
+                <div class="filtro-group filtro-action">
+                    <button id="btn-buscar" class="btn-primary">Buscar</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tabla de Envíos -->
+        <section class="tabla-section">
+            <div class="table-wrapper">
+                <table id="tabla-envios" aria-label="Tabla de envíos paginada">
+                    <thead>
+                        <tr>
+                            <th>Rastreo</th>
+                            <th>Destinatario</th>
+                            <th>Dirección</th>
+                            <th>Flete (₡)</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-body">
+                        <tr>
+                            <td colspan="5" class="empty-state">Cargando datos...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Barra de Navegación de Paginación -->
+            <nav class="paginacion-nav" id="paginacion-nav" aria-label="Navegación de paginación">
+                <button id="btn-primera" class="btn-pag" title="Primera página" disabled>&laquo; Primera</button>
+                <button id="btn-anterior" class="btn-pag" title="Página anterior" disabled>&lsaquo; Anterior</button>
+                <span id="info-pagina" class="pag-info" aria-live="polite">Página 1 de 1 (Total: 0 envíos)</span>
+                <button id="btn-siguiente" class="btn-pag" title="Página siguiente" disabled>Siguiente &rsaquo;</button>
+                <button id="btn-ultima" class="btn-pag" title="Última página" disabled>Última &raquo;</button>
+            </nav>
+        </section>
+
+        <!-- Sección de Métricas (Reto / Puntos extra) -->
+        <section class="metricas-section" id="metricas-section">
+            <h3>Resumen de Métricas (Stored Procedure)</h3>
+            <div class="metricas-grid" id="metricas-grid">
+                <!-- Generado dinámicamente -->
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 ExpresoFast Logística. Todos los derechos reservados. <a href="#">Soporte</a></p>
+    </footer>
+
+    <script>
+
+
+    const API_URL = 'http://localhost:8080/api';
+    let currentPage = 0;      // Base 0 para Spring Data
+    let totalPages = 0;
+    let totalElements = 0;
+    let isFirstPage = true;
+    let isLastPage = true;
+    let usingSP = false;       // Flag: usando stored procedure
+
+    // Decode JWT
+    function parseJwt(token) {
+        try {
+            const base64Url = token.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+                return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+            }).join(''));
+            return JSON.parse(jsonPayload);
+        } catch(e) {
+            return null;
+        }
+    }
+
+    // Fetch con autenticación JWT
+    async function fetchWithAuth(url, options = {}) {
+        const token = sessionStorage.getItem('jwt_token');
+        if (!token) {
+            window.location.href = 'index.html';
+            throw new Error('No token');
+        }
+        if (!options.headers) options.headers = {};
+        options.headers['Authorization'] = `Bearer ${token}`;
+        options.headers['Content-Type'] = 'application/json';
+
+        const response = await fetch(url, options);
+
+        if (response.status === 401 || response.status === 403) {
+            sessionStorage.removeItem('jwt_token');
+            window.location.href = 'index.html';
+            throw new Error('No autorizado');
+        }
+        return response;
+    }
+
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const token = sessionStorage.getItem('jwt_token');
+        if (!token) {
+            window.location.href = 'index.html';
+            return;
+        }
+
+        const payload = parseJwt(token);
+        document.getElementById('user-info').innerText = payload.sub;
+
+        // Logout
+        document.getElementById('btn-logout').addEventListener('click', () => {
+            sessionStorage.removeItem('jwt_token');
+            window.location.href = 'index.html';
+        });
+
+        // Eventos de filtros
+        document.getElementById('btn-buscar').addEventListener('click', () => {
+            currentPage = 0;
+            cargarDatos();
+        });
+
+        document.getElementById('input-busqueda').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                currentPage = 0;
+                cargarDatos();
+            }
+        });
+
+        document.getElementById('select-page-size').addEventListener('change', () => {
+            currentPage = 0;
+            cargarDatos();
+        });
+
+        document.getElementById('select-estado-sp').addEventListener('change', () => {
+            currentPage = 0;
+            cargarDatos();
+        });
+
+        // Botones de paginación
+        document.getElementById('btn-primera').addEventListener('click', () => {
+            currentPage = 0;
+            cargarDatos();
+        });
+        document.getElementById('btn-anterior').addEventListener('click', () => {
+            if (currentPage > 0) {
+                currentPage--;
+                cargarDatos();
+            }
+        });
+        document.getElementById('btn-siguiente').addEventListener('click', () => {
+            if (currentPage < totalPages - 1) {
+                currentPage++;
+                cargarDatos();
+            }
+        });
+        document.getElementById('btn-ultima').addEventListener('click', () => {
+            currentPage = totalPages - 1;
+            cargarDatos();
+        });
+
+        // Carga inicial
+        cargarDatos();
+        cargarMetricas();
+    });
+
+
+    async function cargarDatos() {
+        const estadoSP = document.getElementById('select-estado-sp').value;
+
+        if (estadoSP) {
+            // Usar Stored Procedure
+            usingSP = true;
+            await cargarViaStoredProcedure(estadoSP);
+        } else {
+            // Usar paginación normal
+            usingSP = false;
+            await cargarPaginado();
+        }
+    }
+
+    // Paginación relacional normal
+    async function cargarPaginado() {
+        const size = document.getElementById('select-page-size').value;
+        const busqueda = document.getElementById('input-busqueda').value.trim();
+
+        let url = `${API_URL}/v1/envios?page=${currentPage}&size=${size}&sortBy=fechaCreacion&direction=desc`;
+
+        if (busqueda) {
+            url += `&busqueda=${encodeURIComponent(busqueda)}`;
+        }
+
+        try {
+            const res = await fetchWithAuth(url);
+            if (res.ok) {
+                const data = await res.json();
+
+                // Metadatos de paginación de Spring Data Page<T>
+                totalPages = data.totalPages;
+                totalElements = data.totalElements;
+                isFirstPage = data.first;
+                isLastPage = data.last;
+                currentPage = data.number; // Base 0
+
+                renderTabla(data.content);
+                actualizarPaginador();
+            }
+        } catch (error) {
+            console.error('Error cargando datos paginados:', error);
+        }
+    }
+
+    // Carga via Stored Procedure
+    async function cargarViaStoredProcedure(estado) {
+        try {
+            const res = await fetchWithAuth(`${API_URL}/v1/envios/procedimiento/${encodeURIComponent(estado)}`);
+            if (res.ok) {
+                const data = await res.json();
+
+                totalPages = 1;
+                totalElements = data.length;
+                isFirstPage = true;
+                isLastPage = true;
+                currentPage = 0;
+
+                renderTabla(data);
+                actualizarPaginador();
+            }
+        } catch (error) {
+            console.error('Error cargando datos via SP:', error);
+        }
+    }
+
+
+    function renderTabla(envios) {
+        const tbody = document.getElementById('tabla-body');
+        tbody.innerHTML = '';
+
+        if (!envios || envios.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No se encontraron envíos.</td></tr>';
+            return;
+        }
+
+        envios.forEach(envio => {
+            const tr = document.createElement('tr');
+            const estadoClass = `status-${envio.estado}`;
+            tr.innerHTML = `
+                <td><strong>${envio.codigoRastreo}</strong></td>
+                <td>${envio.destinatario || 'N/A'}</td>
+                <td>${envio.direccionDestino}</td>
+                <td>₡${Number(envio.montoFlete).toLocaleString('es-CR', { minimumFractionDigits: 2 })}</td>
+                <td><span class="badge ${estadoClass}">${envio.estado.replace('_', ' ')}</span></td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+
+    function actualizarPaginador() {
+        const displayPage = currentPage + 1; // Base 1 para usuario
+        document.getElementById('info-pagina').textContent =
+            `Página ${displayPage} de ${totalPages || 1} (Total: ${totalElements} envíos)`;
+
+        // Deshabilitación automática de botones
+        document.getElementById('btn-primera').disabled = isFirstPage;
+        document.getElementById('btn-anterior').disabled = isFirstPage;
+        document.getElementById('btn-siguiente').disabled = isLastPage;
+        document.getElementById('btn-ultima').disabled = isLastPage;
+    }
+
+
+    async function cargarMetricas() {
+        try {
+            const res = await fetchWithAuth(`${API_URL}/v1/envios/metricas`);
+            if (res.ok) {
+                const metricas = await res.json();
+                renderMetricas(metricas);
+            }
+        } catch (error) {
+            console.error('Error cargando métricas:', error);
+        }
+    }
+
+    function renderMetricas(metricas) {
+        const grid = document.getElementById('metricas-grid');
+        grid.innerHTML = '';
+
+        if (!metricas || metricas.length === 0) {
+            grid.innerHTML = '<p style="color:var(--text-muted);">No hay métricas disponibles.</p>';
+            return;
+        }
+
+        metricas.forEach(m => {
+            const card = document.createElement('div');
+            card.className = 'metrica-card';
+            card.innerHTML = `
+                <span class="metrica-estado badge status-${m.estado}">${m.estado.replace('_', ' ')}</span>
+                <div class="metrica-datos">
+                    <div class="metrica-item">
+                        <span class="metrica-label">Total Envíos</span>
+                        <span class="metrica-value">${m.totalEnvios}</span>
+                    </div>
+                    <div class="metrica-item">
+                        <span class="metrica-label">Suma Flete</span>
+                        <span class="metrica-value">₡${Number(m.sumaFlete).toLocaleString('es-CR', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+    }
+    </script>
+</body>
+</html>
